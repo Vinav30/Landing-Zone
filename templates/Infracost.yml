@@ -1,0 +1,49 @@
+parameters:
+  - name: workingDir
+    type: string
+    default: '$(System.DefaultWorkingDirectory)'
+
+jobs:
+  # =========================================================
+  # FINOPS COST SCAN (INFRACOST)
+  # =========================================================
+  - job: infracost_cost_scan
+    displayName: Infracost FinOps Scan
+    # Cyclical reference hatane ke liye variable block yahan se saaf kar diya hai
+
+    steps:
+      - checkout: self
+
+      # 1. Infracost CLI Download aur Install (Updated Official Windows Method)
+      - task: PowerShell@2
+        displayName: Install Infracost CLI
+        inputs:
+          targetType: inline
+          script: |
+            Write-Host "Infracost Windows zip download ho raha hai..."
+            $zipPath = "$env:TEMP\infracost-windows-amd64.zip"
+            $extractPath = "$env:TEMP\infracost-cli"
+            
+            # Download latest release zip
+            Invoke-WebRequest -Uri "https://github.com/infracost/infracost/releases/latest/download/infracost-windows-amd64.zip" -OutFile $zipPath
+            
+            # Extract zip file
+            if (Test-Path $extractPath) { Remove-Item $extractPath -Recurse -Force }
+            Expand-Archive -Path $zipPath -DestinationPath $extractPath
+            
+            # System path mein temporary add karna taaki agle step ko mil sake
+            Write-Host "##vso[task.prependpath]$extractPath"
+            Write-Host "Infracost successfully install ho gaya hai."
+
+      # 2. Infracost Breakdown Run karna
+      - task: PowerShell@2
+        displayName: Calculate Infrastructure Cost
+        inputs:
+          targetType: inline
+          script: |
+            Write-Host "Terraform code ka cost analysis shuru ho raha hai..."
+            # Execute directly using the mapped env variable
+            infracost breakdown --path "${{ parameters.workingDir }}"
+        env:
+          # Yahan direct library ya pipeline settings se secret variable uthayega bina cycle banaye
+          INFRACOST_API_KEY: $(Infracost)

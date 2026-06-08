@@ -1,0 +1,70 @@
+parameters:
+  - name: terraformVersion
+    type: string
+  - name: workingDir
+    type: string
+  - name: serviceConnection
+    type: string
+  - name: backendResourceGroup
+    type: string
+  - name: backendStorageAccount
+    type: string
+  - name: backendContainer
+    type: string
+  - name: tfStateFile
+    type: string
+
+jobs:
+  - job: terraform_plan_job
+    displayName: Terraform Plan Job
+    workspace:
+      clean: all 
+
+    steps:
+      - checkout: self
+
+      # Install Terraform
+      - task: TerraformInstaller@1
+        displayName: Install Terraform
+        inputs:
+          terraformVersion: '${{ parameters.terraformVersion }}'
+
+      # Terraform Init
+      - task: TerraformTask@5
+        displayName: Terraform Init
+        inputs:
+          provider: 'azurerm'
+          command: 'init'
+          workingDirectory: '${{ parameters.workingDir }}'
+          backendServiceArm: '${{ parameters.serviceConnection }}'
+          backendAzureRmResourceGroupName: '${{ parameters.backendResourceGroup }}'
+          backendAzureRmStorageAccountName: '${{ parameters.backendStorageAccount }}'
+          backendAzureRmContainerName: '${{ parameters.backendContainer }}'
+          backendAzureRmKey: '${{ parameters.tfStateFile }}'
+          backendAzureRmUseEntraIdForAuthentication: true
+
+      # Terraform Validate
+      - task: TerraformTask@5
+        displayName: Terraform Validate
+        inputs:
+          provider: 'azurerm'
+          command: 'validate'
+          workingDirectory: '${{ parameters.workingDir }}'
+
+      # Terraform Plan
+      - task: TerraformTask@5
+        displayName: Terraform Plan
+        inputs:
+          provider: 'azurerm'
+          command: 'plan'
+          workingDirectory: '${{ parameters.workingDir }}'
+          environmentServiceNameAzureRM: '${{ parameters.serviceConnection }}'
+          commandOptions: '-out=tfplan'
+
+      # Publish TFPLAN Artifact
+      - task: PublishPipelineArtifact@1
+        displayName: 'Publish Terraform Plan'
+        inputs:
+          targetPath: '${{ parameters.workingDir }}/tfplan'
+          artifact: 'tfplan'
+          publishLocation: 'pipeline'

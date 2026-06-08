@@ -1,0 +1,82 @@
+parameters:
+
+  - name: environment
+    type: string
+
+  - name: terraformVersion
+    type: string
+
+  - name: workingDir
+    type: string
+
+  - name: serviceConnection
+    type: string
+
+  - name: backendResourceGroup
+    type: string
+
+  - name: backendStorageAccount
+    type: string
+
+  - name: backendContainer
+    type: string
+
+  - name: tfStateFile
+    type: string
+
+jobs:
+
+  - deployment: terraform_apply_job
+    displayName: Terraform Apply Job
+
+    environment: '${{ parameters.environment }}'
+
+    strategy:
+      runOnce:
+        deploy:
+
+          steps:
+
+            - checkout: self
+
+            - download: current
+              artifact: tfplan
+
+            - task: TerraformInstaller@1
+              displayName: Install Terraform
+              inputs:
+                terraformVersion: '${{ parameters.terraformVersion }}'
+
+            - task: TerraformTask@5
+              displayName: Terraform Init
+              inputs:
+
+                provider: 'azurerm'
+                command: 'init'
+
+                workingDirectory: '${{ parameters.workingDir }}'
+
+                backendServiceArm: '${{ parameters.serviceConnection }}'
+
+                backendAzureRmResourceGroupName: '${{ parameters.backendResourceGroup }}'
+
+                backendAzureRmStorageAccountName: '${{ parameters.backendStorageAccount }}'
+
+                backendAzureRmContainerName: '${{ parameters.backendContainer }}'
+
+                backendAzureRmKey: '${{ parameters.tfStateFile }}'
+
+                backendAzureRmUseEntraIdForAuthentication: true
+
+            - task: TerraformTask@5
+              displayName: Terraform Apply
+              inputs:
+
+                provider: 'azurerm'
+                command: 'apply'
+
+                workingDirectory: '${{ parameters.workingDir }}'
+
+                environmentServiceNameAzureRM: '${{ parameters.serviceConnection }}'
+
+                commandOptions: '$(Pipeline.Workspace)/tfplan/tfplan'

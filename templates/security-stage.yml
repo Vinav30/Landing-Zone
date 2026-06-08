@@ -1,0 +1,110 @@
+parameters:
+  - name: workingDir
+    type: string
+
+jobs:
+  # =========================================================
+  # TFSEC SCAN
+  # =========================================================
+  - job: tfsec_scan
+    displayName: TFSEC Security Scan
+    steps:
+      - checkout: self
+
+      - task: PowerShell@2
+        displayName: Install tfsec
+        inputs:
+          targetType: inline
+          script: |
+            if (-not (Get-Command tfsec -ErrorAction SilentlyContinue)) {
+                choco install tfsec -y --accept-license
+            }
+
+      - task: PowerShell@2
+        displayName: Run tfsec & Generate JUnit Report
+        continueOnError: true
+        inputs:
+          targetType: inline
+          workingDirectory: ${{ parameters.workingDir }}
+          script: |
+            Write-Host "Running TFSec Scan..."
+            # TFSec ko JUnit format mein report export karne ke liye bol rahe hain
+            tfsec . --format junit --out "$(System.DefaultWorkingDirectory)\tfsec-report.xml"
+
+      - task: PublishTestResults@2
+        displayName: Publish TFSec Results
+        condition: always() # Yeh har haal mein chalega chahe vulnerability mile ya na mile
+        inputs:
+          testResultsFormat: JUnit
+          testResultsFiles: '$(System.DefaultWorkingDirectory)\tfsec-report.xml'
+          failTaskOnFailedTests: false
+          testRunTitle: 'TFSec Scan Results'
+
+  # =========================================================
+  # CHECKOV SCAN
+  # =========================================================
+  - job: checkov_scan
+    displayName: Checkov Security Scan
+    steps:
+      - checkout: self
+
+      - task: PowerShell@2
+        displayName: Download and Install Python (Direct)
+        inputs:
+          targetType: inline
+          script: |
+            $pythonPath = "C:\Python312"
+            $pythonScripts = "C:\Python312\Scripts"
+            
+            if (-not (Test-Path "$pythonPath\python.exe")) {
+                Write-Host "Python nahi mila. Official installer download ho raha hai..."
+                $url = "https://www.python.org/ftp/python/3.12.3/python-3.12.3-amd64.exe"
+                $installerPath = "$env:TEMP\python-installer.exe"
+                
+                Invoke-WebRequest -Uri $url -OutFile $installerPath
+                
+                Write-Host "Python install ho raha hai..."
+                Start-Process -FilePath $installerPath -ArgumentList "/quiet InstallAllUsers=1 TargetDir=$pythonPath PrependPath=1" -Wait
+            } else {
+                Write-Host "Python pehle se installed hai."
+            }
+            
+            if (Test-Path $pythonPath) {
+                Write-Host "##vso[task.prependpath]$pythonScripts"
+                Write-Host "##vso[task.prependpath]$pythonPath"
+                Write-Host "Path successfully update ho gaya."
+            } else {
+                Write-Error "Python installation fail ho gayi!"
+                exit 1
+            }
+
+      - task: PowerShell@2
+        displayName: Install Checkov
+        inputs:
+          targetType: inline
+          script: |
+            python -m pip install --upgrade pip
+            python -m pip install --upgrade checkov
+
+      - task: PowerShell@2
+        displayName: Run Checkov & Generate JUnit Report
+        continueOnError: true
+        inputs:
+          targetType: inline
+          script: |
+            Write-Host "Running Checkov Scan..."
+            # Checkov ka proper CLI output pipe framework ke sath standard file mein redirect kiya
+            python -m checkov `
+              -d "${{ parameters.workingDir }}" `
+              --framework terraform `
+              --soft-fail `
+              -o junitxml | Out-File "$(System.DefaultWorkingDirectory)\checkov-report.xml" -Encoding utf8
+
+      - task: PublishTestResults@2
+        displayName: Publish Checkov Results
+        condition: always()
+        inputs:
+          testResultsFormat: JUnit
+          testResultsFiles: '$(System.DefaultWorkingDirectory)\checkov-report.xml'
+          failTaskOnFailedTests: false
+          testRunTitle: 'Checkov Scan Results'

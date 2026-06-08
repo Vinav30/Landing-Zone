@@ -1,0 +1,154 @@
+trigger:
+  branches:
+    include:
+      - dev
+      - main
+      - feature/*
+
+parameters:
+  - name: environment
+    type: string
+    default: dev
+    values:
+      - dev
+      - test
+      - prod
+
+  - name: terraformVersion
+    type: string
+    default: '1.9.8'
+
+  - name: serviceConnection
+    type: string
+    default: 'Vinav3'
+
+  - name: backendResourceGroup
+    type: string
+    default: 'vinavstg'
+
+  - name: backendStorageAccount
+    type: string
+    default: 'vinavstg1'
+
+  - name: backendContainer
+    type: string
+    default: 'vinav'
+
+  - name: enableApply
+    type: boolean
+    default: false
+
+# =========================================================
+# VARIABLES BLOCK
+# =========================================================
+variables:
+  - group: INFRACOST_API_KEY 
+  - name: workingDir
+    value: '$(System.DefaultWorkingDirectory)/environments/${{ parameters.environment }}'
+  - name: tfStateFile
+    value: '${{ parameters.environment }}.tfstate'
+
+pool:
+  name: Vinav2
+
+stages:
+  # =========================================================
+  # 1. TERRAFORM INIT STAGE
+  # =========================================================
+  - stage: terraform_init
+    displayName: 'Terraform Init'
+    jobs:
+      - template: ../templates/init-stage.yml
+        parameters:
+          terraformVersion: '${{ parameters.terraformVersion }}'
+          workingDir: '$(workingDir)'
+          serviceConnection: '${{ parameters.serviceConnection }}'
+          backendResourceGroup: '${{ parameters.backendResourceGroup }}'
+          backendStorageAccount: '${{ parameters.backendStorageAccount }}'
+          backendContainer: '${{ parameters.backendContainer }}'
+          tfStateFile: '$(tfStateFile)'
+
+  # =========================================================
+  # 2. SECURITY SCAN STAGE
+  # =========================================================
+  - stage: security_scan
+    displayName: 'Security Scan'
+    dependsOn: terraform_init
+    jobs:
+      - template: ../templates/security-stage.yml
+        parameters:
+          workingDir: '$(workingDir)'
+
+  # =========================================================
+  # 3. FINOPS COST SCAN STAGE
+  # =========================================================
+  - stage: finops_scan
+    displayName: 'FinOps Cost Scan'
+    dependsOn: security_scan
+    jobs:
+      - template: ../templates/Infracost.yml
+        parameters:
+          workingDir: '$(workingDir)'
+
+  # =========================================================
+  # 4. TERRAFORM PLAN STAGE
+  # =========================================================
+  - stage: terraform_plan
+    displayName: 'Terraform Plan'
+    dependsOn: finops_scan
+    jobs:
+      - template: ../templates/plan-stage.yml
+        parameters:
+          terraformVersion: '${{ parameters.terraformVersion }}'
+          workingDir: '$(workingDir)'
+          serviceConnection: '${{ parameters.serviceConnection }}'
+          backendResourceGroup: '${{ parameters.backendResourceGroup }}'
+          backendStorageAccount: '${{ parameters.backendStorageAccount }}'
+          backendContainer: '${{ parameters.backendContainer }}'
+          tfStateFile: '$(tfStateFile)'
+
+  # =========================================================
+  # 5. OPA COMPLIANCE SCAN STAGE
+  # =========================================================
+  - stage: opa_compliance_scan
+    displayName: 'OPA Compliance Scan'
+    dependsOn: terraform_plan
+    jobs:
+      - template: ../templates/opa.yml
+        parameters:
+          terraformVersion: '${{ parameters.terraformVersion }}'
+          workingDir: '$(workingDir)'
+
+  - stage: manual_approval
+    displayName: 'Manual Approval'
+    dependsOn: opa_compliance_scan
+    jobs:
+      - job: waitForValidation
+        displayName: 'Wait for Manual Validation'
+        pool: server # Required: ManualValidation must run on an agentless (server) job
+        steps:
+          - task: ManualValidation@1
+            inputs:
+              notifyUsers: 'vinav30@outlook.com'
+              instructions: 'Please review the OPA compliance scan results before approving.'
+              onTimeout: 'reject'
+
+
+  # =========================================================
+  # 6. TERRAFORM APPLY STAGE
+  # =========================================================
+  - stage: terraform_apply
+    displayName: 'Terraform Apply'
+    dependsOn: manual_approval
+    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+    jobs:
+      - template: ../templates/apply-stage.yml
+        parameters:
+          environment: '${{ parameters.environment }}'
+          terraformVersion: '${{ parameters.terraformVersion }}'
+          workingDir: '$(workingDir)'
+          serviceConnection: '${{ parameters.serviceConnection }}'
+          backendResourceGroup: '${{ parameters.backendResourceGroup }}'
+          backendStorageAccount: '${{ parameters.backendStorageAccount }}'
+          backendContainer: '${{ parameters.backendContainer }}'
+          tfStateFile: '$(tfStateFile)'

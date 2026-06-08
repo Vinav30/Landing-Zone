@@ -1,0 +1,96 @@
+parameters:
+  - name: terraformVersion
+    type: string
+  - name: workingDir
+    type: string
+
+jobs:
+  - job: opa_secure_scan
+    displayName: 'OPA Compliance Scan Job'
+    # Job level dependsOn ko hata diya hai kyunki stage level par control ho raha hai
+    
+    steps:
+      - checkout: self
+
+      # 1. Previous stage se tfplan artifact ko download karna
+      - task: DownloadPipelineArtifact@2
+        displayName: 'Download Terraform Plan'
+        inputs:
+          buildType: 'current'
+          artifactName: 'tfplan'
+          targetPath: '${{ parameters.workingDir }}'
+
+      # 2. Terraform CLI install karna (terraform show chalane ke liye zaroori hai)
+      - task: TerraformInstaller@1
+        displayName: 'Install Terraform for CLI operations'
+        inputs:
+          terraformVersion: '${{ parameters.terraformVersion }}'
+
+      # 3. OPA CLI Install karna (Windows Agent ke liye)
+      - task: PowerShell@2
+        displayName: 'Install OPA (Windows)'
+        inputs:
+          targetType: 'inline'
+          script: |
+            Write-Host "Downloading OPA..."
+            Invoke-WebRequest -Uri "https://openpolicyagent.org/downloads/v0.61.0/opa_windows_amd64.exe" -OutFile "$(Pipeline.Workspace)\opa.exe"
+            Write-Host "OPA installed successfully."
+
+      # 4. Terraform Providers initialize karna (Bina Azure login ke plugins fetch karne ke liye)
+      - task: PowerShell@2
+        displayName: 'Terraform Init (No Backend)'
+        inputs:
+          targetType: 'inline'
+          workingDirectory: ${{ parameters.workingDir }}
+          script: |
+            Write-Host "Initializing Terraform without backend to cache providers..."
+            terraform init -backend=false
+
+      # 5. Local tfplan validation aur use JSON mein convert karna
+      - task: PowerShell@2
+        displayName: 'Convert TF Plan to JSON'
+        inputs:
+          targetType: 'inline'
+          workingDirectory: ${{ parameters.workingDir }}
+          script: |
+            Write-Host "Checking for local tfplan in directory: ${{ parameters.workingDir }}"
+            
+            if (-not (Test-Path "tfplan")) {
+                Write-Warning "⚠️ tfplan file not found directly in root. Searching for any .tfplan files..."
+                $anyPlan = Get-ChildItem -Filter "*tfplan*" | Select-Object -First 1
+                if ($anyPlan) {
+                    Write-Host "Found plan file: $($anyPlan.Name). Copying to tfplan..."
+                    Copy-Item $anyPlan.FullName .\tfplan
+                } else {
+                    Write-Error "❌ Koi bhi plan file nahi mili! Please check your plan-stage.yml output name."
+                    exit 1
+                }
+            }
+
+            Write-Host "Converting tfplan to JSON..."
+            terraform show -json tfplan | Out-File -FilePath "tfplan.json" -Encoding utf8
+
+      # 6. OPA Policy ke mutabik evaluation karna
+      - task: PowerShell@2
+        displayName: 'Evaluate OPA Policy'
+        inputs:
+          targetType: 'inline'
+          workingDirectory: ${{ parameters.workingDir }}
+          script: |
+            $opaPath = "$(Pipeline.Workspace)\opa.exe"
+            $regoPath = "$(System.DefaultWorkingDirectory)\templates\opa-policy.rego"
+            $jsonPath = "${{ parameters.workingDir }}\tfplan.json"
+            $outputPath = "${{ parameters.workingDir }}\result.json"
+
+            & $opaPath eval -i $jsonPath -d $regoPath "data.terraform.analysis.allow" | Out-File -FilePath $outputPath -Encoding utf8
+            
+            $result = Get-Content $outputPath -Raw
+            Write-Host "OPA Result: $result"
+
+            if ($result -match '"value":\s*true') {
+                Write-Host "✅ OPA Policy Passed!"
+            } else {
+                Write-Warning "❌ OPA Policy Failed!"
+                & $opaPath eval -i $jsonPath -d $regoPath "data.terraform.analysis.violation"
+                exit 1
+            }

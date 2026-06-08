@@ -1,0 +1,141 @@
+trigger:
+  branches:
+    include:
+      - feature/feature
+
+pool: Vinav2
+
+variables:
+  workingDirectory: '$(System.DefaultWorkingDirectory)\environments\dev'
+
+stages:
+  - stage: StaticAnalysis
+    displayName: 'Static Analysis (Lint & Scan)'
+    jobs:
+      - job: LintAndScan
+        displayName: 'Lint and Security Scan'
+        steps:
+          - checkout: self
+
+          # 1. TFLint
+          - powershell: |
+              $tflintVersion = "v0.51.1"
+              $url = "https://github.com/terraform-linters/tflint/releases/download/$tflintVersion/tflint_windows_amd64.zip"
+              Invoke-WebRequest -Uri $url -OutFile tflint.zip
+              Expand-Archive -Path tflint.zip -DestinationPath .
+              ./tflint.exe --version
+            displayName: 'Install TFLint'
+            workingDirectory: $(workingDirectory)
+
+          - powershell: |
+              ./tflint.exe --init
+              ./tflint.exe --format json > tflint-results.json
+              # Convert JSON to a format compatible with PublishTestResults or just publish as artifact
+              # For simplicity in this example, we run it and it will fail the build if issues are found
+              ./tflint.exe
+            displayName: 'Run TFLint'
+            workingDirectory: $(workingDirectory)
+            continueOnError: true
+
+          # 2. TFSec
+          - powershell: |
+              $tfsecVersion = "v1.28.1"
+              $url = "https://github.com/aquasecurity/tfsec/releases/download/$tfsecVersion/tfsec-windows-amd64.exe"
+              Invoke-WebRequest -Uri $url -OutFile tfsec.exe
+              ./tfsec.exe --version
+            displayName: 'Install TFSec'
+            workingDirectory: $(workingDirectory)
+
+          - powershell: |
+              ./tfsec.exe . --format junit > tfsec-results.xml
+            displayName: 'Run TFSec'
+            workingDirectory: $(workingDirectory)
+            continueOnError: true
+
+          # 3. Checkov
+          - script: |
+              pip install checkov
+              checkov -d . --output junitxml > checkov-results.xml
+            displayName: 'Run Checkov'
+            workingDirectory: $(workingDirectory)
+            continueOnError: true
+
+          # 4. Publish Results
+          - task: PublishTestResults@2
+            displayName: 'Publish Scan Results'
+            inputs:
+              testResultsFormat: 'JUnit'
+              testResultsFiles: '**/*-results.xml'
+              searchFolder: $(workingDirectory)
+              mergeTestResults: true
+              testRunTitle: 'Terraform Static Analysis'
+            condition: succeededOrFailed()
+
+  - stage: TerraformPlan
+    displayName: 'Terraform Plan'
+    dependsOn: StaticAnalysis
+    jobs:
+      - job: terraform_plan
+        displayName: 'Terraform Plan Job'
+        steps:
+          - checkout: self
+          - task: TerraformInstaller@1
+            displayName: 'Install Terraform'
+            inputs:
+              terraformVersion: 'latest'
+
+          - task: TerraformTask@5
+            displayName: 'Terraform Init'
+            inputs:
+              provider: 'azurerm'
+              command: 'init'
+              workingDirectory: $(workingDirectory)
+              backendServiceArm: 'Vinav3'
+              backendAzureRmResourceGroupName: 'vinavstg'
+              backendAzureRmStorageAccountName: 'vinavstg1'
+              backendAzureRmContainerName: 'vinav'
+              backendAzureRmKey: 'vinavkey.tfstate'
+              backendAzureRmUseEntraIdForAuthentication: false
+
+          - task: TerraformTask@5
+            displayName: 'Terraform Plan'
+            inputs:
+              provider: 'azurerm'
+              command: 'plan'
+              workingDirectory: $(workingDirectory)
+              environmentServiceNameAzureRM: 'Vinav3'
+
+  - stage: TerraformApply
+    displayName: 'Terraform Apply'
+    dependsOn: TerraformPlan
+    condition: succeeded()
+    jobs:
+      - job: terraform_apply
+        displayName: 'Terraform Apply Job'
+        steps:
+          - checkout: self
+          - task: TerraformInstaller@1
+            displayName: 'Install Terraform'
+            inputs:
+              terraformVersion: 'latest'
+
+          - task: TerraformTask@5
+            displayName: 'Terraform Init'
+            inputs:
+              provider: 'azurerm'
+              command: 'init'
+              workingDirectory: $(workingDirectory)
+              backendServiceArm: 'Vinav3'
+              backendAzureRmResourceGroupName: 'vinavstg'
+              backendAzureRmStorageAccountName: 'vinavstg1'
+              backendAzureRmContainerName: 'vinav'
+              backendAzureRmKey: 'vinavkey.tfstate'
+              backendAzureRmUseEntraIdForAuthentication: false
+
+          - task: TerraformTask@5
+            displayName: 'Terraform Apply'
+            inputs:
+              provider: 'azurerm'
+              command: 'apply'
+              workingDirectory: $(workingDirectory)
+              environmentServiceNameAzureRM: 'Vinav3'
