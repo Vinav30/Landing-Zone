@@ -4,11 +4,12 @@ on:
   push:
     branches:
       - main
+      - feature
       - develop
 
   pull_request:
     branches:
-      - main
+      - feature
 
 env:
   TF_VERSION: 1.9.0
