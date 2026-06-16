@@ -61,7 +61,7 @@ jobs:
     name: Terraform Apply
     needs: terraform
 
-    
+    if: github.ref == 'refs/heads/main'
 
     runs-on: self-hosted
 
