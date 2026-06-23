@@ -8,14 +8,14 @@ terraform {
 
 
 
-  # backend "azurerm" {
-  # resource_group_name  = "vinavstg"
-  #storage_account_name = "vinavstg"
-  # container_name       = "vinavci"
-  #key                  = "vinav.tf"
-}
+ backend "azurerm" {
+resource_group_name  = "vinavstg"
+storage_account_name = "vinavstg"
+ container_name       = "vinavci"
+key                  = "vinav.tf"
+ }
 
-#}
+}
 
 provider "azurerm" {
   features {

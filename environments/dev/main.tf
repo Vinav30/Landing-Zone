@@ -2,9 +2,6 @@ module "resource_group" {
   source    = "../../modules/resource_group"
   rgs-vinav = var.rgs-vinav
 }
-
-
-
 module "storage_account" {
   depends_on      = [module.resource_group]
   source          = "../../modules/storage_account"
@@ -47,12 +44,12 @@ module "sql_server" {
 
   sql_servers = var.sql_servers
 }
-#  module "bastion" {
-#    depends_on = [module.pip]
-#    source     = "../../modules/bastion"
+module "bastion" {
+  depends_on = [module.pip]
+  source     = "../../modules/bastion"
 
-#    azurerm_bastion_host = var.azurerm_bastion_host
-# }
+  azurerm_bastion_host = var.azurerm_bastion_host
+}
 module "pip" {
   source            = "../../modules/pip"
   depends_on        = [module.subnet]

@@ -8,7 +8,7 @@ rgs-vinav = {
     name     = "rg-vinav15"
     location = "centralus"
   }
- 
+
 }
 # ---------------- STORAGE ACCOUNT ----------------
 storage_accounts = {
@@ -51,12 +51,12 @@ subnet = {
     virtual_network_name = "vinav_vnet2"
     address_prefixes     = ["20.0.1.0/24"]
   }
-  # subnet3 = {
-  #   name                 = "AzureBastionSubnet"
-  #   resource_group_name  = "rg-vinav14"
-  #   virtual_network_name = "vinav_vnet"
-  #   address_prefixes     = ["10.0.2.0/24"]
-  # }
+  subnet3 = {
+    name                 = "AzureBastionSubnet"
+    resource_group_name  = "rg-vinav14"
+    virtual_network_name = "vinav_vnet"
+    address_prefixes     = ["10.0.2.0/24"]
+  }
 }
 
 # ---------------- LINUX VM (NO CREDS HERE ❌) ----------------
@@ -117,29 +117,29 @@ sql_servers = {
   }
 }
 
-# # ---------------- BASTION ----------------
-# azurerm_bastion_host = {
-#   bastion1 = {
-#     name                = "vinavbastionhost1"
-#     location            = "centralus"
-#     resource_group_name = "rg-vinav14"
+# ---------------- BASTION ----------------
+azurerm_bastion_host = {
+  bastion1 = {
+    name                = "vinavbastionhost1"
+    location            = "centralus"
+    resource_group_name = "rg-vinav14"
 
-#     ip_configuration = {
-#       name                 = "bastionipconfig2"
-#       subnet_id            = "/subscriptions/d58bea90-bcec-4795-8e36-2a8311b912bb /resourceGroups/rg-vinav14/providers/Microsoft.Network/virtualNetworks/vinav_vnet/subnets/AzureBastionSubnet"
-#       public_ip_address_id = "/subscriptions/d58bea90-bcec-4795-8e36-2a8311b912bb /resourceGroups/rg-vinav14/providers/Microsoft.Network/publicIPAddresses/vinavbastionpublicip"
-#     }
-#   }
-# }
+    ip_configuration = {
+      name                 = "bastionipconfig2"
+      subnet_id            = "/subscriptions/d58bea90-bcec-4795-8e36-2a8311b912bb/resourceGroups/rg-vinav14/providers/Microsoft.Network/virtualNetworks/vinav_vnet/subnets/AzureBastionSubnet"
+      public_ip_address_id = "/subscriptions/d58bea90-bcec-4795-8e36-2a8311b912bb/resourceGroups/rg-vinav14/providers/Microsoft.Network/publicIPAddresses/vinavbastionpublicip"
+    }
+  }
+}
 
 # ---------------- PUBLIC IP ----------------
 azurerm_public_ip = {
-  # pip1 = {
-  #   name                = "vinavbastionpublicip"
-  #   resource_group_name = "rg-vinav14"
-  #   location            = "centralus"
-  #   allocation_method   = "Static"
-  # }
+  pip1 = {
+    name                = "vinavbastionpublicip"
+    resource_group_name = "rg-vinav14"
+    location            = "centralus"
+    allocation_method   = "Static"
+  }
   vm1 = {
     name                = "vinavvm1-pip"
     resource_group_name = "rg-vinav14"
@@ -180,12 +180,12 @@ nic = {
 # ---------------- KEY VAULT (MAP) ----------------
 azurerm_key_vaults = {
   kv1 = {
-    name                = "vinavkeyvault81"
+    name                = "vinavkeyvault7"
     location            = "centralus"
     resource_group_name = "rg-vinav14"
   }
   kv2 = {
-    name                = "vinavkeyvault82"
+    name                = "vinavkeyvault8"
     location            = "centralus"
     resource_group_name = "rg-vinav15"
   }
